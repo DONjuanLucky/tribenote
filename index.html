@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TribeNote | The Architecture of Memory</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Playfair+Display:ital,wght@0,400;0,600;0,800;1,400&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forest: '#1E3A2F',
+                        parchment: '#F5F5DC',
+                        gold: '#C79A58',
+                        charcoal: '#4A4A4A',
+                        offwhite: '#FAF9F6',
+                    },
+                    fontFamily: {
+                        serif: ['Playfair Display', 'serif'],
+                        display: ['Cinzel', 'serif'],
+                        sans: ['Lato', 'sans-serif'],
+                    },
+                    backgroundImage: {
+                        'paper-grain': "url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjRjVGNURDIi8+CjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiIGZpbGw9IiMwMDAiIG9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')",
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- GSAP & Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            background-color: #1E3A2F;
+            color: #4A4A4A;
+        }
+
+        /* Smooth Scroll Behavior */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        #webgl-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .grain-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0.08;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        /* Editorial Typography Utilities */
+        .drop-cap::first-letter {
+            float: left;
+            font-size: 4rem;
+            line-height: 0.8;
+            padding-right: 0.1em;
+            padding-top: 0.1em;
+            color: #C79A58;
+            font-family: 'Cinzel', serif;
+        }
+
+        .blur-in {
+            opacity: 0;
+            filter: blur(10px);
+            transform: translateY(20px);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1E3A2F; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #C79A58; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #F5F5DC; 
+        }
+
+        .glass-panel {
+            background: rgba(245, 245, 220, 0.92); /* Parchment with opacity */
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(199, 154, 88, 0.3);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- 3D Canvas Background -->
+    <canvas id="webgl-canvas"></canvas>
+    
+    <!-- Grain Overlay for Film/Paper texture -->
+    <div class="grain-overlay"></div>
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 w-full z-40 px-6 py-6 flex justify-between items-center mix-blend-difference text-parchment transition-all duration-300" id="navbar">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 border border-parchment rounded-sm flex items-center justify-center">
+                <span class="font-display font-bold text-lg">T</span>
+            </div>
+            <span class="font-display tracking-widest text-sm uppercase">TribeNote</span>
+        </div>
+        <div class="hidden md:flex gap-8 font-sans text-xs tracking-widest uppercase">
+            <a href="#" class="hover:text-gold transition-colors">Journal</a>
+            <a href="#" class="hover:text-gold transition-colors">Tribe</a>
+            <a href="#" class="hover:text-gold transition-colors">Manifesto</a>
+        </div>
+        <button class="border border-parchment px-6 py-2 text-xs font-sans tracking-widest uppercase hover:bg-parchment hover:text-forest transition-all duration-300">
+            Access Portal
+        </button>
+    </nav>
+
+    <!-- Scroll Content -->
+    <main class="relative z-10">
+
+        <!-- Section 1: Hero -->
+        <section class="min-h-screen flex flex-col justify-center items-center relative px-4" id="section-hero">
+            <div class="text-center max-w-4xl mx-auto mix-blend-normal">
+                <p class="font-display text-gold tracking-[0.3em] text-sm mb-6 blur-in gs-reveal">Volume I: The Awakening</p>
+                <h1 class="font-serif text-6xl md:text-8xl lg:text-9xl text-parchment mb-8 leading-tight blur-in gs-reveal">
+                    Chronicles <br/> <span class="italic text-gold">of the</span> Self
+                </h1>
+                <p class="font-sans text-parchment/80 text-lg md:text-xl max-w-xl mx-auto leading-relaxed blur-in gs-reveal">
+                    An elegant sanctuary for your thoughts. Encrypted by design, curated for the discerning.
+                </p>
+            </div>
+            
+            <div class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-50 blur-in gs-reveal">
+                <span class="text-parchment text-[10px] tracking-widest uppercase">Scroll to begin</span>
+                <div class="w-[1px] h-12 bg-gradient-to-b from-parchment to-transparent"></div>
+            </div>
+        </section>
+
+        <!-- Section 2: Features (The Book) -->
+        <section class="min-h-screen py-24 px-6 md:px-12 flex items-center" id="section-features">
+            <div class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+                
+                <!-- Left: Text Content -->
+                <div class="lg:col-span-5 glass-panel p-8 md:p-12 rounded-sm transform translate-y-12 opacity-0 gs-card">
+                    <div class="border-l-2 border-gold pl-6 mb-8">
+                        <h2 class="font-display text-3xl md:text-4xl text-forest mb-2">Immutable Memory</h2>
+                        <span class="font-sans text-xs tracking-widest uppercase text-gold">Chapter 01</span>
+                    </div>
+                    <p class="font-serif text-charcoal text-lg leading-relaxed drop-cap mb-6">
+                        In an age of ephemeral noise, TribeNote offers permanence. Our platform merges the tactile elegance of classic editorial design with military-grade encryption.
+                    </p>
+                    <ul class="space-y-4 font-sans text-forest/80 text-sm mt-8 border-t border-forest/10 pt-8">
+                        <li class="flex items-center gap-4">
+                            <span class="w-1.5 h-1.5 bg-gold rounded-full"></span>
+                            End-to-End Encrypted Journaling
+                        </li>
+                        <li class="flex items-center gap-4">
+                            <span class="w-1.5 h-1.5 bg-gold rounded-full"></span>
+                            Distraction-Free Editorial Layouts
+                        </li>
+                        <li class="flex items-center gap-4">
+                            <span class="w-1.5 h-1.5 bg-gold rounded-full"></span>
+                            Zero-Knowledge Architecture
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Right: Empty space for 3D element to shine -->
+                <div class="lg:col-span-7 h-full flex items-center justify-center relative">
+                    <!-- The 3D Camera will pan here to show floating book pages -->
+                    <div class="absolute right-0 top-1/2 -translate-y-1/2 text-right pointer-events-none">
+                        <h3 class="font-serif text-9xl text-parchment opacity-5 italic pr-4">Focus</h3>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: The Tribe -->
+        <section class="min-h-screen py-24 px-6 md:px-12 flex items-center justify-center relative" id="section-tribe">
+            <!-- Background Text -->
+            <div class="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none">
+                <span class="font-display text-[20vw] text-gold opacity-[0.03] leading-none select-none">TRIBE</span>
+            </div>
+
+            <div class="max-w-4xl mx-auto text-center relative z-10">
+                <span class="inline-block py-1 px-3 border border-gold rounded-full text-gold text-xs tracking-widest uppercase mb-6 blur-in gs-reveal">Phase II: Community</span>
+                
+                <h2 class="font-serif text-5xl md:text-7xl text-parchment mb-8 blur-in gs-reveal">Curated Connections</h2>
+                
+                <div class="grid md:grid-cols-2 gap-6 text-left mt-16">
+                    <div class="glass-panel p-8 rounded-sm gs-reveal transform translate-y-8 blur-in">
+                        <h3 class="font-display text-2xl text-forest mb-4">The Inner Circle</h3>
+                        <p class="font-sans text-charcoal/80 leading-relaxed text-sm">
+                            Share select entries with a moderated, invitation-only network. Meaningful engagement replaces algorithmic feed scrolling.
+                        </p>
+                    </div>
+                    <div class="glass-panel p-8 rounded-sm gs-reveal transform translate-y-8 blur-in" style="transition-delay: 0.2s;">
+                        <h3 class="font-display text-2xl text-forest mb-4">Collective Wisdom</h3>
+                        <p class="font-sans text-charcoal/80 leading-relaxed text-sm">
+                            Participate in thematic prompts and communal journals, weaving your story into the broader tapestry of the Tribe.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: CTA -->
+        <section class="h-[80vh] flex flex-col justify-center items-center px-6 relative" id="section-cta">
+            <div class="relative z-10 text-center">
+                <h2 class="font-serif text-5xl md:text-6xl text-parchment mb-8 blur-in gs-reveal">Begin Your Legacy</h2>
+                <p class="font-sans text-parchment/70 mb-10 max-w-lg mx-auto blur-in gs-reveal">
+                    Join the waitlist for early access to the sanctuary.
+                </p>
+                
+                <form class="flex flex-col md:flex-row gap-4 justify-center items-center blur-in gs-reveal">
+                    <input type="email" placeholder="Email Address" class="bg-forest/50 border border-parchment/30 text-parchment px-6 py-4 outline-none focus:border-gold w-full md:w-80 placeholder-parchment/30 backdrop-blur-sm transition-all" />
+                    <button type="button" class="bg-gold text-forest font-display font-bold uppercase tracking-widest px-8 py-4 hover:bg-parchment transition-colors w-full md:w-auto">
+                        Request Invite
+                    </button>
+                </form>
+            </div>
+            
+            <footer class="absolute bottom-6 w-full text-center">
+                <p class="text-parchment/20 font-sans text-[10px] tracking-[0.2em] uppercase">&copy; 2024 TribeNote. All Rights Reserved.</p>
+            </footer>
+        </section>
+
+    </main>
+
+    <script>
+        // --- 1. Three.js Scene Setup ---
+        const canvas = document.querySelector('#webgl-canvas');
+        const scene = new THREE.Scene();
+        
+        // Fog for depth fading (Deep Forest Green)
+        scene.fog = new THREE.FogExp2(0x1E3A2F, 0.03);
+        scene.background = new THREE.Color(0x1E3A2F);
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 10;
+        camera.position.y = 0;
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        // --- 2. 3D Content (The "Pages" / Particles) ---
+        
+        // We will create a stream of abstract "pages" (planes)
+        const pageGeometry = new THREE.PlaneGeometry(0.8, 1.2, 4, 4);
+        
+        // Bend the geometry slightly to look like paper
+        const count = pageGeometry.attributes.position.count;
+        for (let i = 0; i < count; i++) {
+            const x = pageGeometry.attributes.position.getX(i);
+            const z = x * x * 0.5; // Parabolic curve
+            pageGeometry.attributes.position.setZ(i, z);
+        }
+        pageGeometry.computeVertexNormals();
+
+        // Material - Parchment/Gold style
+        const pageMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xF5F5DC, // Parchment
+            emissive: 0xC79A58, // Gold glow
+            emissiveIntensity: 0.1,
+            metalness: 0.1,
+            roughness: 0.6,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.9
+        });
+
+        // Instanced Mesh for performance (High count of objects)
+        const instancesCount = 400;
+        const mesh = new THREE.InstancedMesh(pageGeometry, pageMaterial, instancesCount);
+        scene.add(mesh);
+
+        // Dummy object for matrix calculations
+        const dummy = new THREE.Object3D();
+        
+        // Store random data for each instance
+        const particlesData = [];
+
+        for (let i = 0; i < instancesCount; i++) {
+            const x = (Math.random() - 0.5) * 40;
+            const y = (Math.random() - 0.5) * 60; // Tall vertical spread
+            const z = (Math.random() - 0.5) * 30 - 10;
+            
+            dummy.position.set(x, y, z);
+            dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            
+            const scale = Math.random() * 0.5 + 0.5;
+            dummy.scale.set(scale, scale, scale);
+            
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+            
+            particlesData.push({
+                position: new THREE.Vector3(x, y, z),
+                rotation: new THREE.Euler(Math.random(), Math.random(), Math.random()),
+                rotationSpeed: {
+                    x: (Math.random() - 0.5) * 0.005,
+                    y: (Math.random() - 0.5) * 0.005
+                },
+                floatSpeed: Math.random() * 0.02 + 0.01
+            });
+        }
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0xC79A58, 2, 50); // Gold light
+        pointLight.position.set(2, 5, 5);
+        scene.add(pointLight);
+        
+        const blueLight = new THREE.PointLight(0x1E3A2F, 2, 40); // Deep Forest Fill
+        blueLight.position.set(-5, -5, 2);
+        scene.add(blueLight);
+
+
+        // --- 3. Animation Loop & Logic ---
+
+        let time = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.005;
+
+            // Gentle floating animation for all pages
+            for (let i = 0; i < instancesCount; i++) {
+                const data = particlesData[i];
+                
+                dummy.position.copy(data.position);
+                // Add vertical float sine wave
+                dummy.position.y += Math.sin(time + data.position.x) * 0.02;
+                
+                // Continuous slow rotation
+                dummy.rotation.x += data.rotationSpeed.x;
+                dummy.rotation.y += data.rotationSpeed.y;
+                
+                dummy.updateMatrix();
+                mesh.setMatrixAt(i, dummy.matrix);
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+
+        // --- 4. GSAP & ScrollTrigger Staging ---
+        
+        gsap.registerPlugin(ScrollTrigger);
+
+        // A. Camera Path (The "Remotion" Feel)
+        // We move the camera deep into the scene as we scroll
+        
+        const tlScene = gsap.timeline({
+            scrollTrigger: {
+                trigger: "body",
+                start: "top top",
+                end: "bottom bottom",
+                scrub: 1.5 // Smooth catch-up
+            }
+        });
+
+        // Move camera Z and rotate slightly to simulate looking around a library/void
+        tlScene.to(camera.position, {
+            z: -25,
+            y: -5,
+            ease: "none"
+        }, 0);
+
+        // Rotate camera slightly based on scroll
+        tlScene.to(camera.rotation, {
+            x: -0.2, // Look up slightly
+            z: 0.1,  // Dutch tilt
+            ease: "none"
+        }, 0);
+
+        // Rotate the entire particle system to simulate a "vortex" or "turn of page"
+        tlScene.to(mesh.rotation, {
+            y: Math.PI / 2,
+            z: Math.PI / 8,
+            ease: "none"
+        }, 0);
+
+
+        // B. Staged Reveal of UI Elements (DOM)
+        
+        // Hero Text - Staggered reveal on load
+        const heroElements = document.querySelectorAll('#section-hero .gs-reveal');
+        gsap.to(heroElements, {
+            opacity: 1,
+            y: 0,
+            filter: "blur(0px)",
+            stagger: 0.2,
+            duration: 1.5,
+            ease: "power2.out",
+            delay: 0.2
+        });
+
+        // Feature Card Reveal (Book appearing)
+        const featureCard = document.querySelector('.gs-card');
+        gsap.to(featureCard, {
+            scrollTrigger: {
+                trigger: "#section-features",
+                start: "top 70%",
+                end: "top 30%",
+                scrub: 1
+            },
+            opacity: 1,
+            y: 0,
+            duration: 1
+        });
+        
+        // Feature Text lines reveal
+        gsap.utils.toArray('#section-features li').forEach((li, i) => {
+             gsap.from(li, {
+                scrollTrigger: {
+                    trigger: li,
+                    start: "top 85%",
+                },
+                x: -20,
+                opacity: 0,
+                duration: 0.8,
+                ease: "power2.out",
+                delay: i * 0.1
+             });
+        });
+
+        // Tribe Section Parallax & Reveal
+        const tribeReveals = document.querySelectorAll('#section-tribe .gs-reveal');
+        gsap.to(tribeReveals, {
+            scrollTrigger: {
+                trigger: "#section-tribe",
+                start: "top 75%"
+            },
+            opacity: 1,
+            y: 0,
+            filter: "blur(0px)",
+            stagger: 0.2,
+            duration: 1.2,
+            ease: "power2.out"
+        });
+
+        // CTA Reveal
+        const ctaReveals = document.querySelectorAll('#section-cta .gs-reveal');
+        gsap.to(ctaReveals, {
+            scrollTrigger: {
+                trigger: "#section-cta",
+                start: "top 70%"
+            },
+            opacity: 1,
+            filter: "blur(0px)",
+            stagger: 0.1,
+            duration: 1,
+            ease: "power2.out"
+        });
+
+
+        // --- 5. Resize Handler ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
